@@ -43,6 +43,10 @@ angular.module("ngDraggable", [])
 
                 var _pressTimer = null;
 
+                // tracks amount of scrollContainer is scrolled from drag start
+                var _scrolled = 0;
+
+                var scrollContainer = angular.isDefined(attrs.ngDragScrollContainer) ? angular.element(attrs.ngDragScrollContainer)[0] : null;
                 var onDragStartCallback = $parse(attrs.ngDragStart) || null;
                 var onDragStopCallback = $parse(attrs.ngDragStop) || null;
                 var onDragSuccessCallback = $parse(attrs.ngDragSuccess) || null;
@@ -130,6 +134,7 @@ angular.module("ngDraggable", [])
                         _pressTimer = setTimeout(function(){
                             cancelPress();
                             onlongpress(evt);
+                            onmove(evt);
                         },ngDraggable.touchTimeout);
                         $document.on(_moveEvents, cancelPress);
                         $document.on(_releaseEvents, cancelPress);
@@ -190,8 +195,10 @@ angular.module("ngDraggable", [])
                     if (!element.hasClass('dragging')) {
                         _data = getDragData(scope);
                         element.addClass('dragging');
+                        if (scrollContainer) {
+                            _scrolled = scrollContainer.scrollTop;
+                        }
                         $rootScope.$broadcast('draggable:start', {x:_mx, y:_my, tx:_tx, ty:_ty, event:evt, element:element, data:_data});
-
                         if (onDragStartCallback ){
                             scope.$apply(function () {
                                 onDragStartCallback(scope, {$data: _data, $event: evt});
@@ -208,6 +215,10 @@ angular.module("ngDraggable", [])
                     } else {
                         _tx = _mx - _mrx - _dragOffset.left;
                         _ty = _my - _mry - _dragOffset.top;
+                    }
+
+                    if (scrollContainer) {
+                        _ty += (scrollContainer.scrollTop - _scrolled);
                     }
 
                     moveElement(_tx, _ty);
@@ -261,7 +272,12 @@ angular.module("ngDraggable", [])
                             '-ms-transform': 'matrix(1, 0, 0, 1, ' + x + ', ' + y + ')'
                         });
                     }else{
-                        element.css({'left':x+'px','top':y+'px', 'position':'fixed'});
+                        element.css({
+                            'left': x + 'px',
+                            'top': y + 'px',
+                            'position': 'fixed',
+                            'z-index': '99999'
+                        });
                     }
                 };
                 initialize();
@@ -536,13 +552,13 @@ angular.module("ngDraggable", [])
                 var intervalPromise = null;
                 var lastMouseEvent = null;
 
+                var scrollContainer = angular.isDefined(attrs.ngDragScrollContainer) ? angular.element(attrs.ngDragScrollContainer)[0] : null;
                 var config = {
                     verticalScroll: attrs.verticalScroll || true,
                     horizontalScroll: attrs.horizontalScroll || true,
                     activationDistance: attrs.activationDistance || 75,
-                    scrollDistance: attrs.scrollDistance || 15
+                    scrollDistance: attrs.scrollDistance || 25
                 };
-
 
                 var reqAnimFrame = (function() {
                     return window.requestAnimationFrame ||
@@ -577,6 +593,10 @@ angular.module("ngDraggable", [])
                         var viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
                         var viewportHeight = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
 
+                        if (scrollContainer) {
+                            viewportHeight = scrollContainer.clientHeight;
+                        }
+
                         var scrollX = 0;
                         var scrollY = 0;
 
@@ -594,16 +614,19 @@ angular.module("ngDraggable", [])
 
                         if (config.verticalScroll) {
                             // If vertical scrolling is active.
-                            if (lastMouseEvent.clientY < config.activationDistance) {
+                            if (lastMouseEvent.clientY < (scrollContainer
+                                    ? scrollContainer.getBoundingClientRect().top
+                                    : config.activationDistance)) {
                                 // If the mouse is on the top of the viewport within the activation distance.
                                 scrollY = -config.scrollDistance;
                             }
-                            else if (lastMouseEvent.clientY > viewportHeight - config.activationDistance) {
+                            else if (lastMouseEvent.clientY > (scrollContainer
+                                    ? scrollContainer.getBoundingClientRect().bottom
+                                    : viewportHeight - config.activationDistance)) {
                                 // If the mouse is on the bottom of the viewport within the activation distance.
                                 scrollY = config.scrollDistance;
                             }
                         }
-
 
 
                         if (scrollX !== 0 || scrollY !== 0) {
@@ -611,15 +634,26 @@ angular.module("ngDraggable", [])
                             var currentScrollLeft = ($window.pageXOffset || $document[0].documentElement.scrollLeft);
                             var currentScrollTop = ($window.pageYOffset || $document[0].documentElement.scrollTop);
 
+                            if (scrollContainer) {
+                                currentScrollTop = scrollContainer.scrollTop;
+                            }
                             // Remove the transformation from the element, scroll the window by the scroll distance
                             // record how far we scrolled, then reapply the element transformation.
                             var elementTransform = element.css('transform');
                             element.css('transform', 'initial');
 
-                            $window.scrollBy(scrollX, scrollY);
+                            if (scrollContainer) {
+                                scrollContainer.scrollTop += scrollY;
+                            } else {
+                                $window.scrollBy(scrollX, scrollY);
+                            }
+
 
                             var horizontalScrollAmount = ($window.pageXOffset || $document[0].documentElement.scrollLeft) - currentScrollLeft;
-                            var verticalScrollAmount =  ($window.pageYOffset || $document[0].documentElement.scrollTop) - currentScrollTop;
+                            var verticalScrollAmount = ($window.pageYOffset || $document[0].documentElement.scrollTop) - currentScrollTop;
+                            if (scrollContainer) {
+                                verticalScrollAmount = scrollY;
+                            }
 
                             element.css('transform', elementTransform);
 
